@@ -17,8 +17,6 @@ syntax = "proto3";
 
 import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
-import "google/rpc/error_details.proto";
-import "google/rpc/status.proto";
 
 import "apache/rocketmq/v2/definition.proto";
 
@@ -127,18 +125,17 @@ message ForwardMessageToDeadLetterQueueResponse { Status status = 1; }
 
 message HeartbeatRequest {
   string client_id = 1;
-  Resource group = 2;
+  optional Resource group = 2;
 }
 
 message HeartbeatResponse { Status status = 1; }
 
 message EndTransactionRequest {
-  Resource group = 1;
-  string message_id = 2;
-  string transaction_id = 3;
-  TransactionResolution resolution = 4;
-  TransactionSource source = 5;
-  string trace_context = 6;
+  string message_id = 1;
+  string transaction_id = 2;
+  TransactionResolution resolution = 3;
+  TransactionSource source = 4;
+  string trace_context = 5;
 }
 
 message EndTransactionResponse { Status status = 1; }
@@ -172,58 +169,79 @@ message PullMessageResponse {
   repeated Message messages = 5;
 }
 
-message PrintThreadStackTraceCommand { int64 command_id = 1; }
+message PrintThreadStackTraceCommand { string nonce = 1; }
 
 message ThreadStackTrace {
-  int64 command_id = 1;
-  string thread_stack_trace = 2;
+  string nonce = 1;
+  Status status = 2;
+  optional string thread_stack_trace = 3;
 }
 
 message VerifyMessageCommand {
-  int64 command_id = 1;
+  string nonce = 1;
   Message message = 2;
 }
 
 message VerifyMessageResult {
-  int64 command_id = 1;
+  string nonce = 1;
   Status status = 2;
 }
 
 message RecoverOrphanedTransactionCommand {
-  int64 command_id = 1;
-  Message orphaned_transactional_message = 2;
-  string transaction_id = 3;
+  Message orphaned_transactional_message = 1;
+  string transaction_id = 2;
 }
 
-message Settings {
-  string client_id = 1;
+message Config {
   string access_point = 2;
-  Publish publish = 3;
+  Publishing publishing = 3;
   Subscription subscription = 4;
   Authentication authentication = 5;
+  bool enable_tracing = 6;
+  Endpoints tracing_endpoints = 7;
 }
 
-message TelemetryCommand {
-  oneof command {
-    Settings settings = 1;
+message ClientConfig {
+  string client_id = 1;
+  Config config = 2;
+}
 
-    // Request client to recover the orphaned transaction message.
-    RecoverOrphanedTransactionCommand recover_orphaned_transaction_command = 2;
+message ApplyConfigCommand {
+  string nonce = 1;
+  Config config = 2;
+}
 
-    // Request client to print thread stack trace.
-    PrintThreadStackTraceCommand print_thread_stack_trace_command = 3;
+message ApplyConfigResult {
+  string nonce = 1;
+  string client_id = 2;
+  Config config = 3;
+}
 
+message TelemetryRequest {
+  oneof request {
+    ClientConfig client_config = 1;
+    ApplyConfigResult apply_config_result = 2;
+    ChangedSettingsResult changed_settings_result = 3;
     ThreadStackTrace thread_stack_trace = 4;
+    VerifyMessageResult verify_message_result = 5;
+  }
+}
 
+message TelemetryResponse {
+  oneof response {
+    Config config = 1;
+    ApplyConfigCommand apply_config_command = 2;
+    // Request client to recover the orphaned transaction message.
+    RecoverOrphanedTransactionCommand recover_orphaned_transaction_command = 3;
+    // Request client to print thread stack trace.
+    PrintThreadStackTraceCommand print_thread_stack_trace_command = 4;
     // Request client to verify the consumption of the appointed message.
     VerifyMessageCommand verify_message_command = 5;
-
-    VerifyMessageResult verify_message_result = 6;
   }
 }
 
 message NotifyClientTerminationRequest {
-  Resource group = 1;
+  optional Resource group = 1;
   string client_id = 2;
 }
 
@@ -354,7 +372,7 @@ service MessagingService {
   // When servers have need of inspecting client status, they would issue
   // telemetry commands to clients. After executing recieved instructions,
   // clients shall report command execution results through client-side streams.
-  rpc Telemetry(stream TelemetryCommand) returns (stream TelemetryCommand) {}
+  rpc Telemetry(stream TelemetryRequest) returns (stream TelemetryResponse) {}
 
   // Notify the server that the client is terminated.
   rpc NotifyClientTermination(NotifyClientTerminationRequest)
